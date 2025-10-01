@@ -53,13 +53,11 @@ jobs:
         env:
           DOCROOT: ${{ github.workspace }}/web
         run: |
-          echo "127.0.0.1 localhost.localdomain" >>/etc/hosts
           sudo usermod -aG docker www-data
           sudo usermod -aG docker www-data
           sudo apt install -y -o Dpkg::Options::="--force-confnew" apache2
           echo "<VirtualHost *:80>
             DocumentRoot $DOCROOT
-            ServerName localhost
             <Directory $DOCROOT>
               AllowOverride all
               Require all granted
@@ -107,5 +105,4 @@ jobs:
           php ./web/core/scripts/run-tests.sh --verbose \
             --dburl mysql://drupal:drupal@127.0.0.1:3306/drupal \
             --sqlite /tmp/drupal.sqlite \
-            --url http://localhost --class 'Drupal\Tests\system\Functional\Bootstrap\DrupalMessengerServiceTest' 
-          tail -f /dev/null
+            --url http://localhost --class 'Drupal\Tests\system\Functional\Bootstrap\DrupalMessengerServiceTest'
