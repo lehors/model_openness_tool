@@ -54,7 +54,7 @@ jobs:
           DOCROOT: ${{ github.workspace }}/web
         run: |
           sudo usermod -aG docker www-data
-          sudo usermod -aG docker www-data
+          sudo apt-get update
           sudo apt install -y -o Dpkg::Options::="--force-confnew" apache2
           echo "<VirtualHost *:80>
             DocumentRoot $DOCROOT
