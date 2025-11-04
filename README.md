@@ -75,6 +75,10 @@ As described above in the 'Evaluating a model' and Editing a model' sections, an
 
 Contributions to the Model Openness Tool are welcome! To contribute to the software, please see the [CONTRIBUTING.md](CONTRIBUTING.md) file.
 
+## REST API
+
+The MOT can be queried using a simple [REST API](API.md).
+
 ## License
 
 The Model Openness Tool is open-sourced under the MIT license. See the [LICENSE](LICENSE) file for more details.

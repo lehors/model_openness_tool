@@ -14,6 +14,7 @@ use Drupal\mof\ModelEvaluatorInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\RouteCollection;
 
 /**
@@ -31,7 +32,7 @@ use Symfony\Component\Routing\RouteCollection;
  */
 final class ModelEntityResourceV1 extends ResourceBase {
 
-  private readonly SqlEntityStorageInterface $modelStorage;
+  protected readonly SqlEntityStorageInterface $modelStorage;
 
   /**
    * Constructs a Drupal\mof\Plugin\rest\resource\ModelEntityResourceV1 object.
@@ -100,14 +101,36 @@ final class ModelEntityResourceV1 extends ResourceBase {
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request.
-   * @param \Drupal\mof\ModelInterface $model
-   *   The model entity. If NULL a model collection is returned.
    * 
    * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The response containing model data.
    */
-  public function get(Request $request, ?ModelInterface $model = NULL): CacheableJsonResponse {
-    return ($model) ? $this->getModel($model) : $this->listModels($request);
+  public function get(Request $request): CacheableJsonResponse {
+    $model_param = $request->attributes->get('model');
+    if ($model_param == null) {
+      return $this->listModels($request);
+    } else {
+      // first try searching model by ID
+      $model = $this
+      ->modelStorage
+      ->getQuery()
+      ->accessCheck(TRUE)
+      ->condition('id', $model_param)
+      ->execute();
+    $found = reset($model);
+    if (!$found)
+      // then try by name
+      $model = $this
+      ->modelStorage
+      ->getQuery()
+      ->accessCheck(TRUE)
+      ->condition('label', $model_param)
+      ->execute();
+      $found = reset($model);
+      if (!$found)
+        throw new NotFoundHttpException("Model '{$model_param}' not found.");
+    }
+    return $this->getModel($this->modelStorage->load($found));
   }
 
   /**
@@ -122,7 +145,7 @@ final class ModelEntityResourceV1 extends ResourceBase {
    * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The response containing the model.
    */
-  protected function getModel(ModelInterface $model): CacheableJsonResponse {
+  private function getModel(ModelInterface $model): CacheableJsonResponse {
     $json = $this->classify($model);
     $response = new CacheableJsonResponse($json);
     $response->addCacheableDependency($model);
@@ -153,18 +176,26 @@ final class ModelEntityResourceV1 extends ResourceBase {
     $page = max(1, (int) $request->query->get('page', 1));
     $limit = max(1, (int) $request->query->get('limit', 100));
 
-    $pager = new Pager($this->getModelCount(), $limit, $page);
+    $pager = new Pager($this->getModelCount($request), $limit, $page);
     $collection['pager']['total_items'] = $pager->getTotalItems();
     $collection['pager']['total_pages'] = $pager->getTotalPages();
     $collection['pager']['current_page'] = $page;
 
-    $models = $this
+    $query = $this
       ->modelStorage
       ->getQuery()
       ->accessCheck(TRUE)
       ->sort('id', 'ASC')
-      ->range(($page - 1) * $limit, $limit)
-      ->execute();
+      ->range(($page - 1) * $limit, $limit);
+    if ($label = $request->query->get('name')) {
+      $label = addcslashes($label, '\\%_');
+      $query->condition('label', "%{$label}%", 'LIKE');
+    }
+    if ($org = $request->query->get('org')) {
+      $org = addcslashes($org, '\\%_');
+      $query->condition('organization', "%{$org}%", 'LIKE');
+    }
+    $models = $query->execute();
 
     foreach ($this
       ->modelStorage
@@ -183,18 +214,28 @@ final class ModelEntityResourceV1 extends ResourceBase {
   }
 
   /**
-   * Return a total number of models in the database.
+   * Return the total number of models in the database to be returned.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming request.
    *
    * @return int
    *   The number of models.
    */ 
-  protected function getModelCount(): int {
-    return $this
+  protected function getModelCount(Request $request): int {
+    $query = $this
       ->modelStorage
       ->getQuery()
-      ->accessCheck(TRUE)
-      ->count()
-      ->execute();
+      ->accessCheck(TRUE);
+    if ($label = $request->query->get('name')) {
+      $label = addcslashes($label, '\\%_');
+      $query->condition('label', "%{$label}%", 'LIKE');
+    }
+    if ($org = $request->query->get('org')) {
+      $org = addcslashes($org, '\\%_');
+      $query->condition('organization', "%{$org}%", 'LIKE');
+    }
+    return $query->count()->execute();
   }
 
   /**
@@ -232,13 +273,6 @@ final class ModelEntityResourceV1 extends ResourceBase {
 
     foreach ($definition['uri_paths'] as $key => $uri) {
       $route = $this->getBaseRoute($uri, 'GET');
-
-      if (strstr($uri, '{model}')) {
-        $route->setOption('parameters', ['model' => ['type' => 'entity:model']]);
-        $route->setRequirement('_entity_access', 'model.view');
-        $route->setRequirement('model', '\d+');
-      }
-
       $routes->add("{$this->pluginId}.{$key}.GET", $route);
     }
 
