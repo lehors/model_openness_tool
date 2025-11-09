@@ -32,7 +32,7 @@ use Symfony\Component\Routing\RouteCollection;
  */
 final class ModelEntityResourceV1 extends ResourceBase {
 
-  protected readonly SqlEntityStorageInterface $modelStorage;
+  private readonly SqlEntityStorageInterface $modelStorage;
 
   /**
    * Constructs a Drupal\mof\Plugin\rest\resource\ModelEntityResourceV1 object.
@@ -106,31 +106,30 @@ final class ModelEntityResourceV1 extends ResourceBase {
    *   The response containing model data.
    */
   public function get(Request $request): CacheableJsonResponse {
-    $model_param = $request->attributes->get('model');
-    if ($model_param == null) {
+    $param = $request->attributes->get('model');
+    if ($param == null) {
       return $this->listModels($request);
     } else {
       // first try searching model by ID
-      $model = $this
+      $ids = $this
       ->modelStorage
       ->getQuery()
       ->accessCheck(TRUE)
-      ->condition('id', $model_param)
+      ->condition('id', $param)
       ->execute();
-    $found = reset($model);
-    if (!$found)
-      // then try by name
-      $model = $this
-      ->modelStorage
-      ->getQuery()
-      ->accessCheck(TRUE)
-      ->condition('label', $model_param)
-      ->execute();
-      $found = reset($model);
-      if (!$found)
-        throw new NotFoundHttpException("Model '{$model_param}' not found.");
+      if (empty($ids)) {
+        // then try by name
+        $ids = $this
+        ->modelStorage
+        ->getQuery()
+        ->accessCheck(TRUE)
+        ->condition('label', $param)
+        ->execute();
+      }
+      if (empty($ids))
+        throw new NotFoundHttpException("Model '{$param}' not found.");
     }
-    return $this->getModel($this->modelStorage->load($found));
+    return $this->getModel($this->modelStorage->load(reset($ids)));
   }
 
   /**
@@ -145,7 +144,7 @@ final class ModelEntityResourceV1 extends ResourceBase {
    * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The response containing the model.
    */
-  private function getModel(ModelInterface $model): CacheableJsonResponse {
+  protected function getModel(ModelInterface $model): CacheableJsonResponse {
     $json = $this->classify($model);
     $response = new CacheableJsonResponse($json);
     $response->addCacheableDependency($model);
